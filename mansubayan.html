@@ -1,0 +1,657 @@
+<html><head><base href="." />
+<style>
+  body {
+    background: #1a1a1a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: Arial, sans-serif;
+    color: white;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .flower {
+    position: absolute;
+    pointer-events: none;
+    opacity: 0.3;
+    filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.5));
+  }
+
+  @keyframes float {
+    0% {
+      transform: translateY(100vh) rotate(0deg);
+    }
+    100% {
+      transform: translateY(-100vh) rotate(360deg);
+    }
+  }
+
+  @keyframes twinkle {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.6; }
+  }
+
+  #game-container {
+    margin: 20px;
+    transform-origin: top center;
+    transform: scale(0.8);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  #tetris, .held-piece, .next-piece {
+    border: 2px solid #333;
+    background: #000033;
+  }
+  
+  .controls {
+    margin: 20px;
+    padding: 10px;
+    background: #333;
+    border-radius: 5px;
+    text-align: center;
+  }
+  
+  .score {
+    font-size: 24px;
+    margin: 10px;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: space-around;
+    width: 100%;
+    margin-bottom: 10px;
+  }
+
+  .level {
+    font-size: 24px;
+    margin: 10px;
+  }
+  
+  .button {
+    background: #4CAF50;
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin: 5px;
+  }
+  
+  .button:hover {
+    background: #45a049;
+  }
+  
+  .game-buttons {
+    margin-top: 10px;
+  }
+  
+  #space-button {
+    background: #2196F3;
+    width: 200px;
+    margin: 10px auto;
+  }
+  
+  #space-button:hover {
+    background: #1976D2;
+  }
+  
+  #swap-button {
+    background: #9c27b0;
+    width: 200px;
+    margin: 10px auto;
+  }
+
+  #swap-button:hover {
+    background: #7b1fa2;
+  }
+
+  #pause-button {
+    background: #ff9800;
+    width: 200px;
+    margin: 10px auto;
+  }
+
+  #pause-button:hover {
+    background: #f57c00;
+  }
+
+  .pause-overlay {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    font-size: 24px;
+    z-index: 100;
+  }
+  
+  /* Add cosmic styles */
+  .cosmic-gradient {
+    background: linear-gradient(45deg, #1a237e, #4a148c);
+    filter: url(#cosmic-filter);
+  }
+
+  /* Size controls styles */
+  .size-controls {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: #333;
+    padding: 10px;
+    border-radius: 5px;
+    z-index: 1000;
+  }
+
+  .size-controls button {
+    background: #4CAF50;
+    border: none;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    margin: 0 5px;
+  }
+
+  .size-controls button:hover {
+    background: #45a049;
+  }
+</style>
+</head>
+<body>
+<div class="size-controls">
+  <button onclick="adjustSize(0.1)">+</button>
+  <button onclick="adjustSize(-0.1)">-</button>
+  <button onclick="resetSize()">Reset</button>
+</div>
+<div id="game-container">
+  <div class="stats">
+    <div class="score">Score: <span id="score">0</span></div>
+    <div class="level">Level: <span id="level">1</span></div>
+  </div>
+  <div class="piece-preview">
+    <div>
+      <p>Hold:</p>
+      <canvas class="held-piece" id="held" width="160" height="160"></canvas>
+    </div>
+    <div>
+      <p>Next:</p>
+      <canvas class="next-piece" id="next" width="160" height="160"></canvas>
+    </div>
+  </div>
+  <canvas id="tetris" width="400" height="800"></canvas>
+  <div class="controls">
+    <button class="button" onclick="resetGame()">New Game</button>
+    <div class="game-buttons">
+      <button class="button" id="pause-button" onclick="togglePause()">Pause Game (P)</button>
+      <button class="button" id="space-button" onclick="hardDrop()">Hard Drop (Space)</button>
+      <button class="button" id="swap-button" onclick="swapHoldPiece()">Hold Piece (C)</button>
+    </div>
+    <p>Controls: ← → to move, ↑ to rotate, ↓ for soft drop, spacebar for hard drop, C to hold/swap piece</p>
+  </div>
+</div>
+<div class="pause-overlay" id="pause-overlay">
+  Game Paused
+</div>
+
+<script>
+// Flower background animation
+function createFlower() {
+  const flower = document.createElement('div');
+  flower.className = 'flower';
+  
+  const size = Math.random() * 30 + 20;
+  const duration = Math.random() * 10 + 15;
+  const startPosition = Math.random() * window.innerWidth;
+  
+  const svg = `
+    <svg width="${size}" height="${size}" viewBox="0 0 100 100">
+      <defs>
+        <radialGradient id="starGlow">
+          <stop offset="0%" stop-color="#fff" />
+          <stop offset="100%" stop-color="${['#1a237e', '#311b92', '#4527a0', '#6a1b9a'][Math.floor(Math.random() * 4)]}" />
+        </radialGradient>
+      </defs>
+      <path d="M50 0 C60 40 90 50 50 50 C90 50 60 60 50 100 C40 60 10 50 50 50 C10 50 40 40 50 0"
+        fill="url(#starGlow)" />
+    </svg>
+  `;
+  
+  flower.innerHTML = svg;
+  flower.style.left = startPosition + 'px';
+  flower.style.animation = `float ${duration}s linear infinite, twinkle ${duration/2}s ease-in-out infinite`;
+  
+  document.body.appendChild(flower);
+  
+  setTimeout(() => {
+    document.body.removeChild(flower);
+  }, duration * 1000);
+}
+
+function startFlowerAnimation() {
+  setInterval(createFlower, 300);
+}
+
+startFlowerAnimation();
+
+// Original Tetris code
+const canvas = document.getElementById('tetris');
+const context = canvas.getContext('2d');
+const BLOCK_SIZE = 40;
+const COLS = 10;
+const ROWS = 20;
+let dropCounter = 0;
+let dropInterval = 1000;
+let lastTime = 0;
+let score = 0;
+
+let level = 1;
+let linesCleared = 0;
+let isPaused = false;
+
+context.scale(BLOCK_SIZE, BLOCK_SIZE);
+
+// Tetromino shapes
+const PIECES = [
+    [[1, 1, 1, 1]], // I
+    [[1, 1], [1, 1]], // O
+    [[0, 1, 0], [1, 1, 1]], // T
+    [[0, 1, 1], [1, 1, 0]], // S
+    [[1, 1, 0], [0, 1, 1]], // Z
+    [[1, 0, 0], [1, 1, 1]], // L
+    [[0, 0, 1], [1, 1, 1]], // J
+];
+
+const COLORS = [
+    '#1a237e', '#311b92', '#4527a0',
+    '#6a1b9a', '#4a148c', '#26418f', '#1a237e'
+];
+
+let arena = createMatrix(COLS, ROWS);
+let player = {
+    pos: {x: 0, y: 0},
+    matrix: null,
+    score: 0,
+    color: null
+};
+
+let heldPiece = null;
+let canHold = true;
+let nextPiece = null;
+let nextPieceColor = null;
+const heldCanvas = document.getElementById('held');
+const heldContext = heldCanvas.getContext('2d');
+heldContext.scale(40, 40);
+
+const nextCanvas = document.getElementById('next');
+const nextContext = nextCanvas.getContext('2d');
+nextContext.scale(40, 40);
+
+function createMatrix(w, h) {
+    const matrix = [];
+    while (h--) {
+        matrix.push(new Array(w).fill(0));
+    }
+    return matrix;
+}
+
+function createCosmicPattern(context) {
+  const gradient = context.createLinearGradient(0, 0, 1, 1);
+  gradient.addColorStop(0, '#1a237e');
+  gradient.addColorStop(0.3, '#4527a0');
+  gradient.addColorStop(0.6, '#311b92');
+  gradient.addColorStop(1, '#6a1b9a');
+  return gradient;
+}
+
+function createPiece() {
+    const piece = PIECES[Math.floor(Math.random() * PIECES.length)];
+    return piece;
+}
+
+function drawGhostPiece() {
+    const originalY = player.pos.y;
+    while (!collide(arena, player)) {
+        player.pos.y++;
+    }
+    player.pos.y--;
+    
+    player.matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+            if (value !== 0) {
+                context.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                context.fillRect(x + player.pos.x, y + player.pos.y, 1, 1);
+            }
+        });
+    });
+    
+    player.pos.y = originalY;
+}
+
+function drawHeldPiece() {
+    heldContext.fillStyle = '#000033';
+    heldContext.fillRect(0, 0, 4, 4);
+    
+    if (heldPiece) {
+        const offsetX = (4 - heldPiece.length) / 2;
+        const offsetY = (4 - heldPiece[0].length) / 2;
+        
+        heldPiece.forEach((row, y) => {
+            row.forEach((value, x) => {
+                if (value !== 0) {
+                    // Base cosmic gradient
+                    heldContext.fillStyle = createCosmicPattern(heldContext);
+                    heldContext.fillRect(x + offsetX, y + offsetY, 1, 1);
+                    
+                    // Add nebula effect
+                    heldContext.globalAlpha = 0.3;
+                    heldContext.fillStyle = `rgba(138, 43, 226, ${Math.random() * 0.5})`;
+                    heldContext.fillRect(x + offsetX, y + offsetY, 1, 1);
+                    
+                    // Add stars
+                    if (Math.random() < 0.4) {
+                        heldContext.globalAlpha = 1;
+                        heldContext.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                        heldContext.fillRect(
+                            x + offsetX + Math.random() * 0.8,
+                            y + offsetY + Math.random() * 0.8,
+                            0.15,
+                            0.15
+                        );
+                    }
+                    
+                    heldContext.globalAlpha = 1;
+                }
+            });
+        });
+    }
+}
+
+function drawNextPiece() {
+    nextContext.fillStyle = '#000033';
+    nextContext.fillRect(0, 0, 4, 4);
+    
+    if (nextPiece) {
+        const offsetX = (4 - nextPiece.length) / 2;
+        const offsetY = (4 - nextPiece[0].length) / 2;
+        
+        nextPiece.forEach((row, y) => {
+            row.forEach((value, x) => {
+                if (value !== 0) {
+                    // Base cosmic gradient
+                    nextContext.fillStyle = createCosmicPattern(nextContext);
+                    nextContext.fillRect(x + offsetX, y + offsetY, 1, 1);
+                    
+                    // Add nebula effect
+                    nextContext.globalAlpha = 0.3;
+                    nextContext.fillStyle = `rgba(138, 43, 226, ${Math.random() * 0.5})`;
+                    nextContext.fillRect(x + offsetX, y + offsetY, 1, 1);
+                    
+                    // Add stars
+                    if (Math.random() < 0.4) {
+                        nextContext.globalAlpha = 1;
+                        nextContext.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                        nextContext.fillRect(
+                            x + offsetX + Math.random() * 0.8,
+                            y + offsetY + Math.random() * 0.8,
+                            0.15,
+                            0.15
+                        );
+                    }
+                    
+                    nextContext.globalAlpha = 1;
+                }
+            });
+        });
+    }
+}
+
+function playerReset() {
+    if (!nextPiece) {
+        player.matrix = createPiece();
+        player.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    } else {
+        player.matrix = nextPiece;
+        player.color = nextPieceColor;
+    }
+    
+    nextPiece = createPiece();
+    nextPieceColor = COLORS[Math.floor(Math.random() * COLORS.length)];
+    
+    player.pos.y = 0;
+    player.pos.x = Math.floor(COLS / 2) - Math.floor(player.matrix[0].length / 2);
+    
+    if (collide(arena, player)) {
+        arena.forEach(row => row.fill(0));
+        score = 0;
+        level = 1;
+        dropInterval = 1000;
+        updateScore();
+        document.getElementById('level').innerText = level;
+        heldPiece = null;
+        drawHeldPiece();
+    }
+    
+    canHold = true;
+    drawNextPiece();
+}
+
+function updateLevel() {
+  const newLevel = Math.floor(score / 500) + 1;
+  if (newLevel !== level) {
+    level = newLevel;
+    dropInterval = Math.max(100, 1000 - (level - 1) * 100);
+    document.getElementById('level').innerText = level;
+  }
+}
+
+function draw() {
+    context.fillStyle = '#000033';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    
+    drawGhostPiece();
+    drawMatrix(arena, {x: 0, y: 0});
+    drawMatrix(player.matrix, player.pos);
+    drawHeldPiece();
+}
+
+function drawMatrix(matrix, offset) {
+    matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+            if (value !== 0) {
+                // Base cosmic gradient
+                context.fillStyle = createCosmicPattern(context);
+                context.fillRect(x + offset.x, y + offset.y, 1, 1);
+                
+                // Add nebula effect
+                context.globalAlpha = 0.3;
+                context.fillStyle = `rgba(138, 43, 226, ${Math.random() * 0.5})`;
+                context.fillRect(x + offset.x, y + offset.y, 1, 1);
+                
+                // Add stars/sparkles
+                if (Math.random() < 0.4) {
+                    context.globalAlpha = 1;
+                    context.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                    context.fillRect(
+                        x + offset.x + Math.random() * 0.8, 
+                        y + offset.y + Math.random() * 0.8, 
+                        0.15, 
+                        0.15
+                    );
+                }
+                
+                // Add cosmic glow
+                context.globalAlpha = 0.6;
+                context.shadowColor = '#9c27b0';
+                context.shadowBlur = 8;
+                context.fillRect(x + offset.x, y + offset.y, 1, 1);
+                context.shadowBlur = 0;
+                
+                // Reset alpha
+                context.globalAlpha = 1;
+            }
+        });
+    });
+}
+
+function merge(arena, player) {
+    player.matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+            if (value !== 0) {
+                arena[y + player.pos.y][x + player.pos.x] = value;
+            }
+        });
+    });
+}
+
+function playerDrop() {
+    player.pos.y++;
+    if (collide(arena, player)) {
+        player.pos.y--;
+        merge(arena, player);
+        playerReset();
+        arenaSweep();
+        updateScore();
+    }
+    dropCounter = 0;
+}
+
+function playerMove(dir) {
+    player.pos.x += dir;
+    if (collide(arena, player)) {
+        player.pos.x -= dir;
+    }
+}
+
+function playerRotate() {
+    const pos = player.pos.x;
+    let offset = 1;
+    rotate(player.matrix);
+    
+    while (collide(arena, player)) {
+        player.pos.x += offset;
+        offset = -(offset + (offset > 0 ? 1 : -1));
+        if (offset > player.matrix[0].length) {
+            rotate(player.matrix);
+            player.pos.x = pos;
+            return;
+        }
+    }
+}
+
+function rotate(matrix) {
+    for (let y = 0; y < matrix.length; ++y) {
+        for (let x = 0; x < y; ++x) {
+            [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+        }
+    }
+    matrix.reverse();
+}
+
+function collide(arena, player) {
+    const [m, o] = [player.matrix, player.pos];
+    for (let y = 0; y < m.length; ++y) {
+        for (let x = 0; x < m[y].length; ++x) {
+            if (m[y][x] !== 0 && (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function arenaSweep() {
+    let rowCount = 1;
+    outer: for (let y = arena.length - 1; y > 0; --y) {
+        for (let x = 0; x < arena[y].length; ++x) {
+            if (arena[y][x] === 0) {
+                continue outer;
+            }
+        }
+        const row = arena.splice(y, 1)[0].fill(0);
+        arena.unshift(row);
+        ++y;
+        score += rowCount * 100 * level;
+        rowCount *= 2;
+    }
+    updateLevel();
+}
+
+function updateScore() {
+    document.getElementById('score').innerText = score;
+}
+
+function togglePause() {
+  isPaused = !isPaused;
+  document.getElementById('pause-overlay').style.display = isPaused ? 'block' : 'none';
+  document.getElementById('pause-button').textContent = isPaused ? 'Resume Game (P)' : 'Pause Game (P)';
+  if (!isPaused) {
+    lastTime = performance.now();
+    update();
+  }
+}
+
+function update(time = 0) {
+  if (isPaused) return;
+  
+  const deltaTime = time - lastTime;
+  lastTime = time;
+  
+  dropCounter += deltaTime;
+  if (dropCounter > dropInterval) {
+    playerDrop();
+  }
+  
+  draw();
+  drawNextPiece();
+  requestAnimationFrame(update);
+}
+
+function adjustSize(change) {
+  currentScale = Math.max(0.3, Math.min(1.5, currentScale + change));
+  document.getElementById('game-container').style.transform = `scale(${currentScale})`;
+}
+
+function resetSize() {
+  currentScale = 0.8;
+  document.getElementById('game-container').style.transform = `scale(${currentScale})`;
+}
+
+// Initialize default size
+let currentScale = 0.8;
+document.getElementById('game-container').style.transform = `scale(${currentScale})`;
+
+document.addEventListener('keydown', event => {
+  if (event.keyCode === 80) { // 'P' key
+    togglePause();
+  } else if (!isPaused) { // Only process other keys if game is not paused
+    if (event.keyCode === 37) {
+      playerMove(-1);
+    } else if (event.keyCode === 39) {
+      playerMove(1);
+    } else if (event.keyCode === 40) {
+      playerDrop();
+    } else if (event.keyCode === 38) {
+      playerRotate();
+    } else if (event.keyCode === 32) {
+      hardDrop();
+    } else if (event.keyCode === 67) {
+      swapHoldPiece();
+    }
+  }
+});
+
+// Initialize held piece display
+drawHeldPiece();
+drawNextPiece();
+playerReset();
+update();
+</script>
+</body></html>
